@@ -1,0 +1,24 @@
+[project]
+name = "tool-tray"
+version = "0.1.1"
+description = "System tray tool manager for private GitHub tools via uv"
+readme = "README.md"
+authors = [
+    { name = "Fredrik Averpil", email = "fredrik.averpil@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.28.1",
+    "pillow>=12.1.0",
+    "pystray>=0.19.5",
+]
+
+[project.scripts]
+tooltray = "tool_tray:main"
+
+[build-system]
+requires = ["uv_build>=0.9.26,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.basedpyright]
+typeCheckingMode = "standard"
