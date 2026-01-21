@@ -70,35 +70,33 @@ def decode_config(code: str) -> dict:
 
 
 def load_config() -> dict | None:
-    """Load config from disk.
+    """Load config from disk."""
+    from tool_tray.logging import log_debug, log_error
 
-    Returns:
-        Config dict or None if not configured.
-        For v2 format, contains "token" and "repos" keys.
-        Converts stored "tools" to internal Tool objects.
-    """
     path = get_config_path()
     if not path.exists():
+        log_debug(f"Config not found: {path}")
         return None
 
     try:
         data = json.loads(path.read_text())
-        # If we have repos but no tools, we need to fetch manifests
-        # For now, return the raw config - tray.py will handle conversion
+        repos = data.get("repos", [])
+        log_debug(f"Config loaded: {len(repos)} repos")
         return data
-    except (json.JSONDecodeError, OSError):
+    except (json.JSONDecodeError, OSError) as e:
+        log_error(f"Failed to load config: {path}", e)
         return None
 
 
 def save_config(config: dict) -> None:
-    """Save config to disk.
+    """Save config to disk."""
+    from tool_tray.logging import log_info
 
-    Args:
-        config: Dict with "token" and "repos" keys (v2 format)
-    """
     path = get_config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(config, indent=2))
+    repos = config.get("repos", [])
+    log_info(f"Config saved: {len(repos)} repos -> {path}")
 
 
 def config_exists() -> bool:

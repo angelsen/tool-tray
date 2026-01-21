@@ -20,16 +20,18 @@ def _get_tooltray_path() -> str:
                     return line[start + 1 : end]
     except subprocess.CalledProcessError:
         pass
-    # Fallback to assuming it's in PATH
     return "tooltray"
 
 
 def _linux_autostart_enable() -> bool:
     """Add tooltray to Linux autostart."""
+    from tool_tray.logging import log_error, log_info
+
     desktop_file = Path.home() / ".config/autostart/tooltray.desktop"
     desktop_file.parent.mkdir(parents=True, exist_ok=True)
     exe = _get_tooltray_path()
-    desktop_file.write_text(f"""[Desktop Entry]
+    try:
+        desktop_file.write_text(f"""[Desktop Entry]
 Type=Application
 Name=Tool Tray
 Comment=System tray tool manager
@@ -38,15 +40,23 @@ Hidden=false
 NoDisplay=false
 X-GNOME-Autostart-enabled=true
 """)
-    print(f"Autostart enabled: {desktop_file}")
-    return True
+        log_info(f"Autostart enabled: {desktop_file}")
+        print(f"Autostart enabled: {desktop_file}")
+        return True
+    except OSError as e:
+        log_error(f"Failed to enable autostart: {desktop_file}", e)
+        print(f"Failed to enable autostart: {e}")
+        return False
 
 
 def _linux_autostart_disable() -> bool:
     """Remove tooltray from Linux autostart."""
+    from tool_tray.logging import log_info
+
     desktop_file = Path.home() / ".config/autostart/tooltray.desktop"
     if desktop_file.exists():
         desktop_file.unlink()
+        log_info(f"Autostart disabled: {desktop_file}")
         print(f"Autostart disabled: {desktop_file}")
         return True
     print("Autostart was not enabled")
@@ -55,10 +65,13 @@ def _linux_autostart_disable() -> bool:
 
 def _macos_autostart_enable() -> bool:
     """Add tooltray to macOS autostart via LaunchAgent."""
+    from tool_tray.logging import log_error, log_info
+
     plist = Path.home() / "Library/LaunchAgents/com.tooltray.plist"
     plist.parent.mkdir(parents=True, exist_ok=True)
     exe = _get_tooltray_path()
-    plist.write_text(f"""<?xml version="1.0" encoding="UTF-8"?>
+    try:
+        plist.write_text(f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -74,17 +87,25 @@ def _macos_autostart_enable() -> bool:
     <false/>
 </dict>
 </plist>""")
-    subprocess.run(["launchctl", "load", str(plist)], check=False)
-    print(f"Autostart enabled: {plist}")
-    return True
+        subprocess.run(["launchctl", "load", str(plist)], check=False)
+        log_info(f"Autostart enabled: {plist}")
+        print(f"Autostart enabled: {plist}")
+        return True
+    except OSError as e:
+        log_error(f"Failed to enable autostart: {plist}", e)
+        print(f"Failed to enable autostart: {e}")
+        return False
 
 
 def _macos_autostart_disable() -> bool:
     """Remove tooltray from macOS autostart."""
+    from tool_tray.logging import log_info
+
     plist = Path.home() / "Library/LaunchAgents/com.tooltray.plist"
     if plist.exists():
         subprocess.run(["launchctl", "unload", str(plist)], check=False)
         plist.unlink()
+        log_info(f"Autostart disabled: {plist}")
         print(f"Autostart disabled: {plist}")
         return True
     print("Autostart was not enabled")
@@ -93,6 +114,8 @@ def _macos_autostart_disable() -> bool:
 
 def _windows_autostart_enable() -> bool:
     """Add tooltray to Windows autostart via registry."""
+    from tool_tray.logging import log_error, log_info
+
     try:
         import winreg
     except ImportError:
@@ -109,15 +132,19 @@ def _windows_autostart_enable() -> bool:
         )
         winreg.SetValueEx(key, "ToolTray", 0, winreg.REG_SZ, exe)
         winreg.CloseKey(key)
+        log_info("Autostart enabled via registry")
         print("Autostart enabled via registry")
         return True
     except OSError as e:
+        log_error("Failed to enable autostart via registry", e)
         print(f"Failed to enable autostart: {e}")
         return False
 
 
 def _windows_autostart_disable() -> bool:
     """Remove tooltray from Windows autostart."""
+    from tool_tray.logging import log_info
+
     try:
         import winreg
     except ImportError:
@@ -133,6 +160,7 @@ def _windows_autostart_disable() -> bool:
         )
         winreg.DeleteValue(key, "ToolTray")
         winreg.CloseKey(key)
+        log_info("Autostart disabled via registry")
         print("Autostart disabled")
         return True
     except FileNotFoundError:
@@ -145,6 +173,9 @@ def _windows_autostart_disable() -> bool:
 
 def enable_autostart() -> bool:
     """Add tooltray to system autostart."""
+    from tool_tray.logging import log_debug
+
+    log_debug(f"Enabling autostart on {sys.platform}")
     if sys.platform == "darwin":
         return _macos_autostart_enable()
     elif sys.platform == "win32":
@@ -155,6 +186,9 @@ def enable_autostart() -> bool:
 
 def disable_autostart() -> bool:
     """Remove tooltray from system autostart."""
+    from tool_tray.logging import log_debug
+
+    log_debug(f"Disabling autostart on {sys.platform}")
     if sys.platform == "darwin":
         return _macos_autostart_disable()
     elif sys.platform == "win32":

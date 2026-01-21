@@ -51,25 +51,44 @@ def _install_url(repo: str, token: str) -> str:
 
 def install_tool(repo: str, manifest: Manifest, token: str) -> bool:
     """Install or update tool based on manifest type."""
+    from tool_tray.logging import log_error, log_info
+
+    log_info(f"Installing: {repo} (type={manifest.type})")
     if manifest.type == "uv":
-        return _install_uv_tool(repo, token)
+        success = _install_uv_tool(repo, token)
     elif manifest.type == "git":
-        return _install_git_tool(repo, manifest, token)
+        success = _install_git_tool(repo, manifest, token)
     elif manifest.type == "curl":
-        return _install_curl_tool(repo, manifest, token)
-    return False
+        success = _install_curl_tool(repo, manifest, token)
+    else:
+        log_error(f"Unknown manifest type: {manifest.type}")
+        return False
+
+    # Auto-create desktop icon if enabled
+    if success and manifest.desktop_icon:
+        from tool_tray.desktop import create_desktop_icon
+
+        tool_name = manifest.launch or manifest.name
+        log_info(f"Auto-creating desktop icon: {tool_name}")
+        create_desktop_icon(tool_name)
+
+    return success
 
 
 def _install_uv_tool(repo: str, token: str) -> bool:
     """Install or update tool via uv tool install --force."""
+    from tool_tray.logging import log_error, log_info
+
     try:
         subprocess.run(
             ["uv", "tool", "install", _install_url(repo, token), "--force"],
             check=True,
             capture_output=True,
         )
+        log_info(f"Installed: {repo}")
         return True
-    except subprocess.CalledProcessError:
+    except subprocess.CalledProcessError as e:
+        log_error(f"Failed to install {repo}", e)
         return False
 
 

@@ -1,47 +1,25 @@
-import subprocess
 from pathlib import Path
 
-
-def get_tool_executable(tool_name: str) -> Path | None:
-    """Get executable path from uv tool list --show-paths."""
-    try:
-        result = subprocess.run(
-            ["uv", "tool", "list", "--show-paths"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        for line in result.stdout.splitlines():
-            # Format: "- toolname (/path/to/exe)"
-            if line.startswith(f"- {tool_name} "):
-                start = line.find("(")
-                end = line.find(")")
-                if start != -1 and end != -1:
-                    return Path(line[start + 1 : end])
-        return None
-    except subprocess.CalledProcessError:
-        return None
+from tool_tray.tray import get_tool_executable
 
 
 def create_desktop_icon(tool_name: str, icon_path: str | None = None) -> bool:
-    """Create desktop shortcut for a uv tool.
+    """Create desktop shortcut for a uv tool."""
+    from tool_tray.logging import log_debug, log_error, log_info
 
-    Args:
-        tool_name: Name of the installed tool
-        icon_path: Optional path to icon file
+    log_debug(f"Creating desktop icon: {tool_name}")
 
-    Returns:
-        True if shortcut was created successfully
-    """
     try:
         from pyshortcuts import make_shortcut
     except ImportError:
+        log_debug("pyshortcuts not installed, skipping desktop icon")
         print("pyshortcuts not installed.")
         print("Install with: uv tool install tool-tray[desktop]")
         return False
 
     exe = get_tool_executable(tool_name)
     if not exe:
+        log_error(f"Tool not found for desktop icon: {tool_name}")
         print(f"Tool '{tool_name}' not found in uv tool list")
         return False
 
@@ -53,23 +31,20 @@ def create_desktop_icon(tool_name: str, icon_path: str | None = None) -> bool:
             terminal=False,
             desktop=True,
         )
+        log_info(f"Desktop icon created: {tool_name}")
         print(f"Desktop icon created for '{tool_name}'")
         return True
     except Exception as e:
+        log_error(f"Failed to create desktop icon: {tool_name}", e)
         print(f"Failed to create desktop icon: {e}")
         return False
 
 
 def remove_desktop_icon(tool_name: str) -> bool:
-    """Remove desktop shortcut for a tool.
-
-    Args:
-        tool_name: Name of the tool
-
-    Returns:
-        True if shortcut was removed successfully
-    """
+    """Remove desktop shortcut for a tool."""
     import sys
+
+    from tool_tray.logging import log_error, log_info
 
     display_name = tool_name.replace("-", " ").title()
 
@@ -88,9 +63,11 @@ def remove_desktop_icon(tool_name: str) -> bool:
                 shutil.rmtree(shortcut)
             else:
                 shortcut.unlink()
+            log_info(f"Desktop icon removed: {tool_name}")
             print(f"Desktop icon removed for '{tool_name}'")
             return True
         except OSError as e:
+            log_error(f"Failed to remove desktop icon: {tool_name}", e)
             print(f"Failed to remove desktop icon: {e}")
             return False
     else:

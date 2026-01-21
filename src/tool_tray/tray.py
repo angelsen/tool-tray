@@ -81,12 +81,15 @@ def get_tool_executable(tool_name: str) -> str | None:
 
 def launch_tool(tool_name: str) -> None:
     """Launch a tool by name."""
+    from tool_tray.logging import log_error, log_info
+
     for status in _tool_statuses:
         if status.name == tool_name and status.executable:
+            log_info(f"Launching: {tool_name} -> {status.executable}")
             try:
                 subprocess.Popen([status.executable])
-            except OSError:
-                pass
+            except OSError as e:
+                log_error(f"Failed to launch {tool_name}", e)
             break
 
 
@@ -107,9 +110,12 @@ def reload_config() -> bool:
 
 def refresh_statuses() -> None:
     """Refresh version info for all repos with manifests."""
+    from tool_tray.logging import log_debug, log_info
+
     global _tool_statuses
     _tool_statuses = []
 
+    log_info(f"Refreshing {len(_repos)} repos")
     for repo in _repos:
         manifest = fetch_manifest(repo, _token)
         if not manifest:
@@ -130,6 +136,9 @@ def refresh_statuses() -> None:
                 executable=executable,
             )
         )
+        log_debug(f"Status: {manifest.name} installed={installed} remote={remote}")
+
+    log_info(f"Refresh complete: {len(_tool_statuses)} tools loaded")
 
 
 def update_all() -> None:
@@ -227,16 +236,24 @@ def on_startup(icon: Any) -> None:
 
 def run_tray() -> None:
     """Main entry point - create and run the tray icon."""
+    from tool_tray import __version__
+    from tool_tray.logging import log_info
+
     global _icon
+
+    log_info(f"Starting tooltray v{__version__}")
 
     # Show setup dialog if no config exists
     if not config_exists():
+        log_info("No config found, showing setup")
         if not show_setup_dialog():
-            return  # User cancelled, exit
+            log_info("Setup cancelled, exiting")
+            return
 
     reload_config()
     refresh_statuses()
 
+    log_info("Tray icon starting")
     _icon = pystray.Icon(
         "tooltray",
         icon=create_icon(),
