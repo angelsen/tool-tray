@@ -1,4 +1,4 @@
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 
 def main() -> None:
@@ -19,6 +19,10 @@ def main() -> None:
         _cmd_encode(args[1:])
     elif command == "setup":
         _cmd_setup()
+    elif command == "reset":
+        _cmd_reset()
+    elif command == "init":
+        _cmd_init()
     elif command == "autostart":
         _cmd_autostart(args[1:])
     elif command == "desktop-icon":
@@ -39,6 +43,8 @@ def _cmd_help() -> None:
 Usage:
   tooltray                      Run system tray app
   tooltray setup                Configure via CLI (paste config code)
+  tooltray reset                Remove config and start fresh
+  tooltray init                 Create tooltray.toml in current directory
   tooltray encode               Generate config code for sharing
   tooltray autostart            Manage system autostart
   tooltray desktop-icon         Create desktop shortcuts
@@ -71,6 +77,63 @@ def _cmd_setup() -> None:
         print("Configuration saved successfully!")
     else:
         print("Setup cancelled")
+
+
+def _cmd_reset() -> None:
+    from tool_tray.config import get_config_path
+
+    path = get_config_path()
+    if not path.exists():
+        print("No config found")
+        return
+
+    print(f"Config file: {path}")
+    try:
+        confirm = input("Remove config? [y/N] ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return
+
+    if confirm == "y":
+        path.unlink()
+        print("Config removed")
+    else:
+        print("Cancelled")
+
+
+def _cmd_init() -> None:
+    from pathlib import Path
+
+    manifest_path = Path("tooltray.toml")
+    if manifest_path.exists():
+        print(f"Already exists: {manifest_path}")
+        return
+
+    template = """name = ""      # Display name in tray menu
+type = "uv"    # uv | git | curl
+launch = ""    # Command to run when clicked
+"""
+
+    manifest_path.write_text(template)
+
+    print("""tooltray.toml created!
+
+Tool Tray is a system tray app that manages tools from private GitHub repos.
+Users get a config code with repo list + token, tooltray fetches manifests.
+
+Edit tooltray.toml:
+  name   - Display name in the tray menu
+  type   - "uv" for Python tools, "git" for clone+build, "curl" for downloads
+  launch - Command name to run when clicked (usually same as name)
+
+Optional fields:
+  build        - Build command for git/curl types (e.g. "npm install")
+  desktop_icon - Set to true to create desktop shortcut
+  autostart    - Set to true to launch on system startup
+  icon         - Path to icon file in repo
+
+Once configured, commit tooltray.toml to your repo.
+""")
 
 
 def _cmd_autostart(args: list[str]) -> None:
