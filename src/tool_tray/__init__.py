@@ -1,4 +1,4 @@
-__version__ = "0.2.2"
+__version__ = "0.2.3"
 
 
 def main() -> None:
@@ -27,6 +27,8 @@ def main() -> None:
         _cmd_autostart(args[1:])
     elif command == "desktop-icon":
         _cmd_desktop_icon(args[1:])
+    elif command == "logs":
+        _cmd_logs(args[1:])
     elif command in ("-h", "--help", "help"):
         _cmd_help()
     elif command in ("-v", "--version", "version"):
@@ -48,6 +50,7 @@ Usage:
   tooltray encode               Generate config code for sharing
   tooltray autostart            Manage system autostart
   tooltray desktop-icon         Create desktop shortcuts
+  tooltray logs                 View log file
 
 Encode options:
   --token TOKEN                 GitHub PAT (required)
@@ -61,6 +64,10 @@ Autostart options:
 
 Desktop icon options:
   <toolname>                    Create desktop icon for tool
+
+Logs options:
+  -f, --follow                  Tail log file (like tail -f)
+  --path                        Print log file path
 
 Examples:
   tooltray setup
@@ -183,6 +190,31 @@ def _cmd_desktop_icon(args: list[str]) -> None:
     tool_name = args[0]
     if not create_desktop_icon(tool_name):
         sys.exit(1)
+
+
+def _cmd_logs(args: list[str]) -> None:
+    import subprocess
+    import sys
+
+    from tool_tray.logging import get_log_dir
+
+    log_file = get_log_dir() / "tooltray.log"
+
+    if "--path" in args:
+        print(log_file)
+        return
+
+    if not log_file.exists():
+        print(f"No log file yet: {log_file}")
+        sys.exit(1)
+
+    if "-f" in args or "--follow" in args:
+        try:
+            subprocess.run(["tail", "-f", str(log_file)])
+        except KeyboardInterrupt:
+            pass
+    else:
+        subprocess.run(["tail", "-50", str(log_file)])
 
 
 def _cmd_encode(args: list[str]) -> None:
