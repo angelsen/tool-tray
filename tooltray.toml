@@ -1,3 +1,0 @@
-name = ""      # Display name in tray menu
-type = "uv"    # uv | git | curl
-launch = ""    # Command to run when clicked
