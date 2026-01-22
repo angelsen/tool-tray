@@ -83,6 +83,7 @@ def load_config() -> dict | None:
         # Sanitize repo names (strip quotes that may have been included on Windows)
         if "repos" in data:
             from urllib.parse import unquote
+
             data["repos"] = [unquote(r).strip().strip("'\"") for r in data["repos"]]
         repos = data.get("repos", [])
         log_debug(f"Config loaded: {len(repos)} repos")

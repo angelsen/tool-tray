@@ -1,4 +1,4 @@
-__version__ = "0.3.3"
+__version__ = "0.3.6"
 
 
 def main() -> None:
@@ -344,6 +344,7 @@ def _cmd_encode(args: list[str]) -> None:
             i += 2
         elif arg == "--repo" and i + 1 < len(args):
             from urllib.parse import unquote
+
             repo = unquote(args[i + 1]).strip().strip("'\"")
             if "/" not in repo:
                 print(f"Invalid repo format: {repo}")

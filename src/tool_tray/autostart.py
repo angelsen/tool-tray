@@ -69,7 +69,11 @@ def _macos_autostart_enable() -> bool:
 
     plist = Path.home() / "Library/LaunchAgents/com.tooltray.plist"
     plist.parent.mkdir(parents=True, exist_ok=True)
-    exe = _get_tooltray_path()
+
+    # Use sys.executable to run with same Python interpreter - no PATH needed
+    python_exe = sys.executable
+    log_dir = Path.home() / "Library/Logs/tooltray"
+    log_dir.mkdir(parents=True, exist_ok=True)
     try:
         plist.write_text(f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -79,12 +83,18 @@ def _macos_autostart_enable() -> bool:
     <string>com.tooltray</string>
     <key>ProgramArguments</key>
     <array>
-        <string>{exe}</string>
+        <string>{python_exe}</string>
+        <string>-m</string>
+        <string>tool_tray</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
     <false/>
+    <key>StandardOutPath</key>
+    <string>{log_dir}/stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>{log_dir}/stderr.log</string>
 </dict>
 </plist>""")
         subprocess.run(["launchctl", "load", str(plist)], check=False)

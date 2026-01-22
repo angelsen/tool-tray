@@ -56,6 +56,8 @@ _token: str = ""
 _repos: list[str] = []
 _tool_statuses: list[ToolStatus] = []
 _icon: Any = None
+_last_refresh: float = 0
+_REFRESH_THROTTLE_SECONDS: int = 30
 
 
 def create_icon() -> Image.Image:
@@ -117,12 +119,26 @@ def reload_config() -> bool:
     return True
 
 
-def refresh_statuses() -> None:
+def refresh_statuses(force: bool = False) -> None:
     """Refresh version info for all repos with manifests."""
+    import time
+
     from tool_tray.logging import log_debug, log_info
 
-    global _tool_statuses
+    global _tool_statuses, _last_refresh
+
+    # Throttle refreshes to avoid hitting GitHub API repeatedly
+    now = time.time()
+    if (
+        not force
+        and _last_refresh
+        and (now - _last_refresh) < _REFRESH_THROTTLE_SECONDS
+    ):
+        log_debug(f"Refresh throttled ({int(now - _last_refresh)}s since last)")
+        return
+
     _tool_statuses = []
+    _last_refresh = now
 
     log_info(f"Refreshing {len(_repos)} repos")
     for repo in _repos:
@@ -360,8 +376,8 @@ def spawn_setup() -> None:
 
     from tool_tray.logging import log_info
 
-    # Use sys.argv[0] to handle cases where tooltray isn't in PATH
-    cmd = [sys.argv[0], "setup"]
+    # Use sys.executable to run with same Python interpreter
+    cmd = [sys.executable, "-m", "tool_tray", "setup"]
     log_info(f"Spawning setup subprocess: {cmd}")
     subprocess.Popen(cmd)
 
