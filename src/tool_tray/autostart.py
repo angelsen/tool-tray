@@ -65,13 +65,24 @@ def _linux_autostart_disable() -> bool:
 
 def _macos_autostart_enable() -> bool:
     """Add tooltray to macOS autostart via LaunchAgent."""
+    import shutil
+
     from tool_tray.logging import log_error, log_info
 
     plist = Path.home() / "Library/LaunchAgents/com.tooltray.plist"
     plist.parent.mkdir(parents=True, exist_ok=True)
 
-    # Use sys.executable to run with same Python interpreter - no PATH needed
+    # Use sys.executable to run with same Python interpreter
     python_exe = sys.executable
+
+    # Find uv binary path for PATH env (needed for get_installed_version)
+    uv_bin = shutil.which("uv")
+    if not uv_bin:
+        log_error("Cannot enable autostart: uv not found in PATH")
+        print("Error: uv not found in PATH. Install uv first.")
+        return False
+    uv_dir = str(Path(uv_bin).parent)
+
     log_dir = Path.home() / "Library/Logs/tooltray"
     log_dir.mkdir(parents=True, exist_ok=True)
     try:
@@ -91,6 +102,11 @@ def _macos_autostart_enable() -> bool:
     <true/>
     <key>KeepAlive</key>
     <false/>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>{uv_dir}:/usr/bin:/bin</string>
+    </dict>
     <key>StandardOutPath</key>
     <string>{log_dir}/stdout.log</string>
     <key>StandardErrorPath</key>
