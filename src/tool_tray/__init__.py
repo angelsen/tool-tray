@@ -1,4 +1,4 @@
-__version__ = "0.3.1"
+__version__ = "0.3.2"
 
 
 def main() -> None:
@@ -18,7 +18,7 @@ def main() -> None:
     if command == "encode":
         _cmd_encode(args[1:])
     elif command == "setup":
-        _cmd_setup()
+        _cmd_setup(args[1:])
     elif command == "reset":
         _cmd_reset()
     elif command == "init":
@@ -44,13 +44,16 @@ def _cmd_help() -> None:
 
 Usage:
   tooltray                      Run system tray app
-  tooltray setup                Configure via CLI (paste config code)
+  tooltray setup                Configure via GUI dialog
   tooltray reset                Remove config and start fresh
   tooltray init                 Create tooltray.toml in current directory
   tooltray encode               Generate config code for sharing
   tooltray autostart            Manage system autostart
   tooltray logs                 View log file
   tooltray cleanup              Remove orphaned desktop icons
+
+Setup options:
+  --code CODE                   Config code (skip GUI dialog)
 
 Encode options:
   --token TOKEN                 GitHub PAT (required)
@@ -72,19 +75,41 @@ Cleanup options:
 
 Examples:
   tooltray setup
+  tooltray setup --code "TB-eyJ0b2tlbi..."
   tooltray encode --token ghp_xxx --repo myorg/myapp --repo myorg/cli
   tooltray autostart --enable
   tooltray cleanup --dry-run
 """)
 
 
-def _cmd_setup() -> None:
-    from tool_tray.setup_dialog import show_setup_dialog
+def _cmd_setup(args: list[str]) -> None:
+    from tool_tray.config import decode_config, save_config
 
-    if show_setup_dialog():
-        print("Configuration saved successfully!")
+    # Check for --code flag
+    code: str | None = None
+    i = 0
+    while i < len(args):
+        if args[i] == "--code" and i + 1 < len(args):
+            code = args[i + 1]
+            break
+        i += 1
+
+    if code:
+        # Direct CLI mode
+        try:
+            config = decode_config(code)
+            save_config(config)
+            print("Configuration saved successfully!")
+        except ValueError as e:
+            print(f"Error: {e}")
     else:
-        print("Setup cancelled")
+        # GUI dialog mode
+        from tool_tray.setup_dialog import show_setup_dialog
+
+        if show_setup_dialog():
+            print("Configuration saved successfully!")
+        else:
+            print("Setup cancelled")
 
 
 def _cmd_reset() -> None:
