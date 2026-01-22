@@ -372,12 +372,14 @@ def on_startup(icon: Any) -> None:
 
 def spawn_setup() -> None:
     """Spawn setup dialog as subprocess."""
+    import shutil
     import sys
 
     from tool_tray.logging import log_info
 
-    # Use sys.executable to run with same Python interpreter
-    cmd = [sys.executable, "-m", "tool_tray", "setup"]
+    # Use tooltray script (not -m) because tkinter needs proper Tcl/Tk paths
+    tooltray_bin = shutil.which("tooltray") or sys.argv[0]
+    cmd = [tooltray_bin, "setup"]
     log_info(f"Spawning setup subprocess: {cmd}")
     subprocess.Popen(cmd)
 
