@@ -58,8 +58,6 @@ def install_tool(repo: str, manifest: Manifest, token: str) -> bool:
         success = _install_uv_tool(repo, token)
     elif manifest.type == "git":
         success = _install_git_tool(repo, manifest, token)
-    elif manifest.type == "curl":
-        success = _install_curl_tool(repo, manifest, token)
     else:
         log_error(f"Unknown manifest type: {manifest.type}")
         return False
@@ -70,7 +68,7 @@ def install_tool(repo: str, manifest: Manifest, token: str) -> bool:
 
         tool_name = manifest.launch or manifest.name
         log_info(f"Auto-creating desktop icon: {tool_name}")
-        create_desktop_icon(tool_name)
+        create_desktop_icon(tool_name, repo=repo)
 
     return success
 
@@ -84,17 +82,22 @@ def _install_uv_tool(repo: str, token: str) -> bool:
             ["uv", "tool", "install", _install_url(repo, token), "--force"],
             check=True,
             capture_output=True,
+            text=True,
         )
         log_info(f"Installed: {repo}")
         return True
     except subprocess.CalledProcessError as e:
-        log_error(f"Failed to install {repo}", e)
+        # Don't log exception - it contains the token in the command
+        stderr = e.stderr if e.stderr else "unknown error"
+        log_error(f"Failed to install {repo}: {stderr}")
         return False
 
 
 def _install_git_tool(repo: str, manifest: Manifest, token: str) -> bool:
     """Install tool via git clone + optional build command."""
     from pathlib import Path
+
+    from tool_tray.logging import log_error, log_info
 
     clone_url = f"https://oauth2:{token}@github.com/{repo}"
     install_dir = Path.home() / ".local/share/tooltray" / repo.split("/")[-1]
@@ -113,6 +116,7 @@ def _install_git_tool(repo: str, manifest: Manifest, token: str) -> bool:
             ["git", "clone", "--depth=1", clone_url, str(install_dir)],
             check=True,
             capture_output=True,
+            text=True,
         )
 
         # Run build command if specified
@@ -123,15 +127,13 @@ def _install_git_tool(repo: str, manifest: Manifest, token: str) -> bool:
                 cwd=install_dir,
                 check=True,
                 capture_output=True,
+                text=True,
             )
 
+        log_info(f"Installed (git): {repo}")
         return True
-    except subprocess.CalledProcessError:
+    except subprocess.CalledProcessError as e:
+        # Don't log exception - it may contain the token
+        stderr = e.stderr if e.stderr else "unknown error"
+        log_error(f"Failed to install {repo}: {stderr}")
         return False
-
-
-def _install_curl_tool(repo: str, manifest: Manifest, token: str) -> bool:
-    """Install tool by downloading release archive."""
-    # For curl type, we'd download from releases
-    # This is a placeholder for future implementation
-    return False

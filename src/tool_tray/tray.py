@@ -1,6 +1,7 @@
 import subprocess
 import threading
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import pystray
@@ -8,8 +9,16 @@ from PIL import Image, ImageDraw
 
 from tool_tray.config import config_exists, load_config
 from tool_tray.manifest import Manifest, fetch_manifest
-from tool_tray.setup_dialog import show_setup_dialog
 from tool_tray.updater import get_installed_version, get_remote_version, install_tool
+
+
+@dataclass
+class OrphanedIcon:
+    """A desktop icon that should be cleaned up."""
+
+    tool_name: str
+    path: str
+    reason: str  # "tool_removed", "desktop_icon_disabled", "file_missing"
 
 
 @dataclass
@@ -141,6 +150,86 @@ def refresh_statuses() -> None:
     log_info(f"Refresh complete: {len(_tool_statuses)} tools loaded")
 
 
+def find_orphaned_icons() -> list[OrphanedIcon]:
+    """Find desktop icons that should be cleaned up. Called each time menu opens."""
+    from tool_tray.state import load_state
+
+    orphans: list[OrphanedIcon] = []
+
+    state = load_state()
+    if not state.desktop_icons:
+        return orphans
+
+    # Build set of active repos and their manifests
+    active_repos = set(_repos)
+    manifest_by_repo: dict[str, Manifest] = {}
+    for status in _tool_statuses:
+        manifest_by_repo[status.repo] = status.manifest
+
+    for tool_name, record in state.desktop_icons.items():
+        icon_path = Path(record.path)
+
+        # Check if file was deleted externally
+        if not icon_path.exists():
+            orphans.append(
+                OrphanedIcon(
+                    tool_name=tool_name,
+                    path=record.path,
+                    reason="file_missing",
+                )
+            )
+            continue
+
+        # Check if repo was removed from config
+        if record.repo not in active_repos:
+            orphans.append(
+                OrphanedIcon(
+                    tool_name=tool_name,
+                    path=record.path,
+                    reason="tool_removed",
+                )
+            )
+            continue
+
+        # Check if desktop_icon was disabled in manifest
+        manifest = manifest_by_repo.get(record.repo)
+        if manifest and not manifest.desktop_icon:
+            orphans.append(
+                OrphanedIcon(
+                    tool_name=tool_name,
+                    path=record.path,
+                    reason="desktop_icon_disabled",
+                )
+            )
+
+    return orphans
+
+
+def cleanup_orphans(orphans: list[OrphanedIcon]) -> int:
+    """Remove orphaned icons. Returns count of removed icons."""
+    from tool_tray.desktop import remove_desktop_icon
+    from tool_tray.logging import log_info
+    from tool_tray.state import remove_icon_record
+
+    count = 0
+
+    for orphan in orphans:
+        if orphan.reason == "file_missing":
+            # Just remove the record
+            remove_icon_record(orphan.tool_name)
+            count += 1
+        else:
+            # Remove file and record
+            if remove_desktop_icon(orphan.tool_name):
+                remove_icon_record(orphan.tool_name)
+                count += 1
+
+    if count:
+        log_info(f"Cleaned up {count} orphaned icons")
+
+    return count
+
+
 def update_all() -> None:
     """Install/update all tools with available updates."""
     if not _token:
@@ -148,24 +237,25 @@ def update_all() -> None:
     for status in _tool_statuses:
         if status.has_update or not status.installed:
             install_tool(status.repo, status.manifest, _token)
-    refresh_statuses()
-    if _icon:
-        _icon.update_menu()
-
-
-def check_for_updates() -> None:
-    """Background refresh of version info."""
-    refresh_statuses()
-    if _icon:
-        _icon.update_menu()
 
 
 def on_check_updates(icon: Any, item: Any) -> None:
-    threading.Thread(target=check_for_updates, daemon=True).start()
+    """Refresh version info. Menu rebuilds automatically when opened."""
+    refresh_statuses()
 
 
 def on_update_all(icon: Any, item: Any) -> None:
+    """Install/update all tools in background. Click 'Check for Updates' after."""
     threading.Thread(target=update_all, daemon=True).start()
+
+
+def make_cleanup_callback(orphans: list[OrphanedIcon]) -> Any:
+    """Create a callback that cleans up the given orphans."""
+
+    def callback(icon: Any, item: Any) -> None:
+        cleanup_orphans(orphans)
+
+    return callback
 
 
 def on_quit(icon: Any, item: Any) -> None:
@@ -181,15 +271,22 @@ def make_tool_callback(tool_name: str) -> Any:
     return callback
 
 
-def build_menu() -> Any:
-    """Build the tray menu."""
+def build_menu_items() -> list[Any]:
+    """Build menu items from current state. Called each time menu opens."""
+    # Reload config fresh each time menu opens
+    reload_config()
+
     items: list[Any] = []
 
+    # Not configured state
     if not _token:
         items.append(pystray.MenuItem("[!] Not configured", None, enabled=False))
-        items.append(pystray.MenuItem("Run: tooltray setup", None, enabled=False))
+        items.append(pystray.MenuItem("Setup...", on_configure))
         items.append(pystray.Menu.SEPARATOR)
+        items.append(pystray.MenuItem("Quit", on_quit))
+        return items
 
+    # Configured state - show tools
     for status in _tool_statuses:
         text = status.display_text
         if status.has_update:
@@ -204,9 +301,32 @@ def build_menu() -> Any:
         else:
             items.append(pystray.MenuItem(text, None, enabled=False))
 
-    if not _tool_statuses and _token:
+    if not _tool_statuses:
         items.append(
             pystray.MenuItem("No tools with tooltray.toml", None, enabled=False)
+        )
+
+    # Show orphaned icons section if any exist
+    orphans = find_orphaned_icons()
+    if orphans:
+        items.append(pystray.Menu.SEPARATOR)
+        items.append(pystray.MenuItem("Orphaned Icons:", None, enabled=False))
+        for orphan in orphans:
+            reason_text = {
+                "tool_removed": "repo removed",
+                "desktop_icon_disabled": "disabled",
+                "file_missing": "file missing",
+            }.get(orphan.reason, orphan.reason)
+            items.append(
+                pystray.MenuItem(
+                    f"  {orphan.tool_name} ({reason_text})", None, enabled=False
+                )
+            )
+        items.append(
+            pystray.MenuItem(
+                f"Clean Up ({len(orphans)})",
+                make_cleanup_callback(orphans),
+            )
         )
 
     items.append(pystray.Menu.SEPARATOR)
@@ -216,22 +336,43 @@ def build_menu() -> Any:
         pystray.MenuItem(
             "Update All",
             on_update_all,
-            enabled=has_updates and bool(_token),
+            enabled=has_updates,
         )
     )
-    items.append(
-        pystray.MenuItem("Check for Updates", on_check_updates, enabled=bool(_token))
-    )
+    items.append(pystray.MenuItem("Check for Updates", on_check_updates))
+    items.append(pystray.MenuItem("Configure...", on_configure))
     items.append(pystray.Menu.SEPARATOR)
     items.append(pystray.MenuItem("Quit", on_quit))
 
-    return pystray.Menu(*items)
+    return items
+
+
+def build_menu() -> Any:
+    """Build dynamic menu that rebuilds items each time it's opened."""
+    return pystray.Menu(lambda: iter(build_menu_items()))
 
 
 def on_startup(icon: Any) -> None:
     """Called when tray icon is ready."""
     icon.visible = True
-    check_for_updates()
+    refresh_statuses()
+
+
+def spawn_setup() -> None:
+    """Spawn setup dialog as subprocess."""
+    import sys
+
+    from tool_tray.logging import log_info
+
+    # Use sys.argv[0] to handle cases where tooltray isn't in PATH
+    cmd = [sys.argv[0], "setup"]
+    log_info(f"Spawning setup subprocess: {cmd}")
+    subprocess.Popen(cmd)
+
+
+def on_configure(icon: Any, item: Any) -> None:
+    """Open setup dialog for configuration."""
+    spawn_setup()
 
 
 def run_tray() -> None:
@@ -243,12 +384,10 @@ def run_tray() -> None:
 
     log_info(f"Starting tooltray v{__version__}")
 
-    # Show setup dialog if no config exists
+    # Spawn setup dialog if no config (non-blocking)
     if not config_exists():
-        log_info("No config found, showing setup")
-        if not show_setup_dialog():
-            log_info("Setup cancelled, exiting")
-            return
+        log_info("No config found, spawning setup")
+        spawn_setup()
 
     reload_config()
     refresh_statuses()

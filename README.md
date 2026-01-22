@@ -11,17 +11,12 @@ System tray app to manage and update Python tools from private GitHub repos via 
    uv tool install tool-tray
    ```
 
-2. Run setup:
-   ```bash
-   tooltray setup
-   ```
-
-3. Paste the config code when prompted
-
-4. Run the tray:
+2. Run the tray:
    ```bash
    tooltray
    ```
+
+3. On first run, setup dialog opens automatically - paste your config code
 
 ### For Admins
 
@@ -40,9 +35,12 @@ Each repo must have a `tooltray.toml` manifest (see below).
 |---------|-------------|
 | `tooltray` | Run tray app |
 | `tooltray setup` | Configure via CLI (paste config code) |
+| `tooltray reset` | Remove config and start fresh |
+| `tooltray init` | Create `tooltray.toml` template in current dir |
 | `tooltray encode` | Generate config code for sharing |
 | `tooltray autostart` | Manage system startup |
-| `tooltray desktop-icon` | Create desktop shortcuts |
+| `tooltray logs` | View log file |
+| `tooltray cleanup` | Remove orphaned desktop icons |
 | `tooltray --help` | Show help |
 | `tooltray --version` | Show version |
 
@@ -74,22 +72,44 @@ tooltray autostart --disable  # Remove from startup
 tooltray autostart --status   # Check if enabled
 ```
 
-### Desktop Icons
+### Logs
 
 ```bash
-# Requires: uv tool install tool-tray[desktop]
-tooltray desktop-icon databridge
+tooltray logs           # Show last 50 lines
+tooltray logs -f        # Tail in real-time
+tooltray logs --path    # Print log file path
+```
+
+### Cleanup
+
+Remove orphaned desktop icons (icons for tools no longer in config):
+
+```bash
+tooltray cleanup --dry-run  # Show what would be removed
+tooltray cleanup            # Prompt and remove
+tooltray cleanup --force    # Remove without prompting
 ```
 
 ## Tray Menu
 
+When not configured:
+| Item | Description |
+|------|-------------|
+| `[!] Not configured` | Status indicator |
+| Setup... | Open setup dialog |
+| Quit | Exit the app |
+
+When configured:
 | Item | Description |
 |------|-------------|
 | `> myapp 1.0.0` | Click to launch |
 | `> myapp 1.0.0 -> 1.1.0 *` | Update available, click to launch |
 | `myapp (not installed)` | Not yet installed |
+| Orphaned Icons | Shows icons needing cleanup (if any) |
+| Clean Up (n) | Remove orphaned icons |
 | Update All | Install/update all tools |
 | Check for Updates | Refresh version info |
+| Configure... | Open setup dialog to reconfigure |
 | Quit | Exit the app |
 
 ## Project Manifest (`tooltray.toml`)
@@ -98,9 +118,9 @@ Each managed repo must have a `tooltray.toml` in its root:
 
 ```toml
 name = "databridge"           # Display name (required)
-type = "uv"                   # uv | git | curl (required)
+type = "uv"                   # uv | git (required)
 launch = "databridge"         # Command to launch (optional)
-build = "npm install"         # Build command for git/curl (optional)
+build = "npm install"         # Build command for git type (optional)
 desktop_icon = true           # Create desktop shortcut (default: false)
 icon = "assets/icon.png"      # Path to icon in repo (optional)
 autostart = false             # Add to system autostart (default: false)
@@ -133,9 +153,6 @@ Config is stored at:
 
 - Python 3.12+
 - uv
-
-Optional:
-- `pyshortcuts` for desktop icons (`uv tool install tool-tray[desktop]`)
 
 ## Development
 

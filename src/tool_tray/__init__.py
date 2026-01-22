@@ -1,4 +1,4 @@
-__version__ = "0.2.3"
+__version__ = "0.3.1"
 
 
 def main() -> None:
@@ -25,10 +25,10 @@ def main() -> None:
         _cmd_init()
     elif command == "autostart":
         _cmd_autostart(args[1:])
-    elif command == "desktop-icon":
-        _cmd_desktop_icon(args[1:])
     elif command == "logs":
         _cmd_logs(args[1:])
+    elif command == "cleanup":
+        _cmd_cleanup(args[1:])
     elif command in ("-h", "--help", "help"):
         _cmd_help()
     elif command in ("-v", "--version", "version"):
@@ -49,8 +49,8 @@ Usage:
   tooltray init                 Create tooltray.toml in current directory
   tooltray encode               Generate config code for sharing
   tooltray autostart            Manage system autostart
-  tooltray desktop-icon         Create desktop shortcuts
   tooltray logs                 View log file
+  tooltray cleanup              Remove orphaned desktop icons
 
 Encode options:
   --token TOKEN                 GitHub PAT (required)
@@ -62,18 +62,19 @@ Autostart options:
   --disable                     Remove from system startup
   --status                      Check if autostart is enabled
 
-Desktop icon options:
-  <toolname>                    Create desktop icon for tool
-
 Logs options:
   -f, --follow                  Tail log file (like tail -f)
   --path                        Print log file path
+
+Cleanup options:
+  --dry-run                     Show what would be removed
+  --force                       Remove without confirmation
 
 Examples:
   tooltray setup
   tooltray encode --token ghp_xxx --repo myorg/myapp --repo myorg/cli
   tooltray autostart --enable
-  tooltray desktop-icon databridge
+  tooltray cleanup --dry-run
 """)
 
 
@@ -117,7 +118,7 @@ def _cmd_init() -> None:
         return
 
     template = """name = ""      # Display name in tray menu
-type = "uv"    # uv | git | curl
+type = "uv"    # uv | git
 launch = ""    # Command to run when clicked
 """
 
@@ -130,11 +131,11 @@ Users get a config code with repo list + token, tooltray fetches manifests.
 
 Edit tooltray.toml:
   name   - Display name in the tray menu
-  type   - "uv" for Python tools, "git" for clone+build, "curl" for downloads
+  type   - "uv" for Python tools, "git" for clone+build
   launch - Command name to run when clicked (usually same as name)
 
 Optional fields:
-  build        - Build command for git/curl types (e.g. "npm install")
+  build        - Build command for git type (e.g. "npm install")
   desktop_icon - Set to true to create desktop shortcut
   autostart    - Set to true to launch on system startup
   icon         - Path to icon file in repo
@@ -178,23 +179,8 @@ def _cmd_autostart(args: list[str]) -> None:
         sys.exit(1)
 
 
-def _cmd_desktop_icon(args: list[str]) -> None:
-    import sys
-
-    from tool_tray.desktop import create_desktop_icon
-
-    if not args:
-        print("Usage: tooltray desktop-icon <toolname>")
-        sys.exit(1)
-
-    tool_name = args[0]
-    if not create_desktop_icon(tool_name):
-        sys.exit(1)
-
-
 def _cmd_logs(args: list[str]) -> None:
-    import subprocess
-    import sys
+    import time
 
     from tool_tray.logging import get_log_dir
 
@@ -206,15 +192,111 @@ def _cmd_logs(args: list[str]) -> None:
 
     if not log_file.exists():
         print(f"No log file yet: {log_file}")
-        sys.exit(1)
+        return
 
     if "-f" in args or "--follow" in args:
         try:
-            subprocess.run(["tail", "-f", str(log_file)])
+            with open(log_file) as f:
+                f.seek(0, 2)
+                while True:
+                    line = f.readline()
+                    if line:
+                        print(line, end="")
+                    else:
+                        time.sleep(0.5)
         except KeyboardInterrupt:
             pass
     else:
-        subprocess.run(["tail", "-50", str(log_file)])
+        lines = log_file.read_text().splitlines()
+        for line in lines[-50:]:
+            print(line)
+
+
+def _cmd_cleanup(args: list[str]) -> None:
+    from pathlib import Path
+
+    from tool_tray.config import load_config
+    from tool_tray.desktop import remove_desktop_icon
+    from tool_tray.manifest import fetch_manifest
+    from tool_tray.state import load_state, remove_icon_record
+
+    dry_run = "--dry-run" in args
+    force = "--force" in args
+
+    # Load config to get active repos
+    config = load_config()
+    if not config:
+        print("No config found. Run 'tooltray setup' first.")
+        return
+
+    token = config.get("token", "")
+    repos = config.get("repos", [])
+    active_repos = set(repos)
+
+    # Build manifest lookup for active repos
+    manifest_by_repo: dict[str, bool] = {}  # repo -> desktop_icon enabled
+    for repo in repos:
+        manifest = fetch_manifest(repo, token)
+        if manifest:
+            manifest_by_repo[repo] = manifest.desktop_icon
+
+    # Find orphaned icons
+    state = load_state()
+    orphans: list[tuple[str, str, str]] = []  # (tool_name, path, reason)
+
+    for tool_name, record in state.desktop_icons.items():
+        icon_path = Path(record.path)
+
+        if not icon_path.exists():
+            orphans.append((tool_name, record.path, "file missing"))
+        elif record.repo not in active_repos:
+            orphans.append((tool_name, record.path, "repo removed"))
+        elif record.repo in manifest_by_repo and not manifest_by_repo[record.repo]:
+            orphans.append((tool_name, record.path, "desktop_icon disabled"))
+
+    if not orphans:
+        print("No orphaned icons found.")
+        return
+
+    # Display orphans
+    print(f"Found {len(orphans)} orphaned icon(s):\n")
+    for tool_name, path, reason in orphans:
+        print(f"  {tool_name}")
+        print(f"    Path: {path}")
+        print(f"    Reason: {reason}\n")
+
+    if dry_run:
+        print("Dry run - no changes made.")
+        return
+
+    # Confirm unless --force
+    if not force:
+        try:
+            confirm = input("Remove these icons? [y/N] ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return
+
+        if confirm != "y":
+            print("Cancelled")
+            return
+
+    # Remove orphans
+    removed = 0
+    for tool_name, path, reason in orphans:
+        if reason == "file missing":
+            remove_icon_record(tool_name)
+            removed += 1
+            print(f"Removed record: {tool_name}")
+        else:
+            if remove_desktop_icon(tool_name):
+                remove_icon_record(tool_name)
+                removed += 1
+                print(f"Removed: {tool_name}")
+            else:
+                print(f"Failed to remove: {tool_name}")
+
+    print(f"\nCleaned up {removed} icon(s).")
 
 
 def _cmd_encode(args: list[str]) -> None:
@@ -236,7 +318,8 @@ def _cmd_encode(args: list[str]) -> None:
             prefix = args[i + 1]
             i += 2
         elif arg == "--repo" and i + 1 < len(args):
-            repo = args[i + 1]
+            from urllib.parse import unquote
+            repo = unquote(args[i + 1]).strip().strip("'\"")
             if "/" not in repo:
                 print(f"Invalid repo format: {repo}")
                 print("Expected: ORG/REPO (e.g., myorg/myapp)")

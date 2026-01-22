@@ -9,7 +9,7 @@ class Manifest:
     """Tool manifest from tooltray.toml."""
 
     name: str
-    type: str  # "uv" | "git" | "curl"
+    type: str  # "uv" | "git"
     launch: str | None = None
     build: str | None = None
     desktop_icon: bool = False

@@ -12,8 +12,8 @@ def get_log_dir() -> Path:
     if sys.platform == "win32":
         base = os.environ.get("LOCALAPPDATA")
         if base:
-            return Path(base) / "tooltray/logs"
-        return Path.home() / "AppData/Local/tooltray/logs"
+            return Path(base) / "tooltray/log"
+        return Path.home() / "AppData/Local/tooltray/log"
     elif sys.platform == "darwin":
         return Path.home() / "Library/Logs/tooltray"
     else:
