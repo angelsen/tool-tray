@@ -239,13 +239,8 @@ def update_all() -> None:
             install_tool(status.repo, status.manifest, _token)
 
 
-def on_check_updates(icon: Any, item: Any) -> None:
-    """Refresh version info. Menu rebuilds automatically when opened."""
-    refresh_statuses()
-
-
 def on_update_all(icon: Any, item: Any) -> None:
-    """Install/update all tools in background. Click 'Check for Updates' after."""
+    """Install/update all tools in background."""
     threading.Thread(target=update_all, daemon=True).start()
 
 
@@ -273,8 +268,10 @@ def make_tool_callback(tool_name: str) -> Any:
 
 def build_menu_items() -> list[Any]:
     """Build menu items from current state. Called each time menu opens."""
-    # Reload config fresh each time menu opens
+    # Reload config and statuses fresh each time menu opens
     reload_config()
+    if _token:
+        refresh_statuses()
 
     items: list[Any] = []
 
@@ -339,7 +336,6 @@ def build_menu_items() -> list[Any]:
             enabled=has_updates,
         )
     )
-    items.append(pystray.MenuItem("Check for Updates", on_check_updates))
     items.append(pystray.MenuItem("Configure...", on_configure))
     items.append(pystray.Menu.SEPARATOR)
     items.append(pystray.MenuItem("Quit", on_quit))

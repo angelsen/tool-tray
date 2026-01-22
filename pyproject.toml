@@ -1,6 +1,6 @@
 [project]
 name = "tool-tray"
-version = "0.3.2"
+version = "0.3.3"
 description = "System tray tool manager for private GitHub tools via uv"
 readme = "README.md"
 authors = [
